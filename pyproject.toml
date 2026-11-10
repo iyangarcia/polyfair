@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pmengine"
+version = "0.1.0"
+description = "Event-driven fair-value trading engine for the Polymarket CLOB"
+requires-python = ">=3.11"
+dependencies = [
+    "websockets>=13",
+    "httpx>=0.27",
+    "pyyaml>=6",
+    "pydantic>=2.6",
+    "python-dotenv>=1",
+]
+
+[project.optional-dependencies]
+live = ["polymarket-client>=0.18"]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+pmengine = "pmengine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

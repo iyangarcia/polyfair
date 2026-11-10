@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.env
+config.yaml
+data/
+INFO.md
+CLAUDE.md
