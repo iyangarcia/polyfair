@@ -1,0 +1,12 @@
+services:
+  engine:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+    # Paper mode by default. For live trading set PM_ENABLE_LIVE=1 in .env and use:
+    # command: ["run", "--config", "/app/config.yaml", "--live"]

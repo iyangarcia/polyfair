@@ -1,0 +1,63 @@
+# Copy to config.yaml and edit. Find slugs with:  pmengine scan "bitcoin above"
+# The slugs below were live on 2026-11-10 and are examples only: daily markets
+# expire, so replace them with current ones.
+
+bankroll: 1000          # USDC allocated to the engine (Kelly sizes off equity)
+db_path: data/engine.db
+status_interval_s: 30
+
+strategy:
+  min_edge: 0.02        # required edge per share after fees
+  max_edge: 0.25        # bigger than this = assume the model or config is wrong
+  exit_edge: 0.0        # sell when the bid pays this much over fair value
+  kelly_fraction: 0.25
+
+risk:
+  max_order_usd: 25
+  max_position_usd: 100
+  max_total_exposure_usd: 500
+  max_session_loss_usd: 50
+  max_orders_per_min: 20
+  cooldown_s: 2
+  max_feed_silence_s: 30
+  kill_file: data/KILL
+
+oracle:
+  binance_ws: wss://stream.binance.com:9443
+  max_age_s: 2
+  min_time_to_expiry_s: 300
+
+vol:
+  prior: {BTCUSDT: 0.50, ETHUSDT: 0.65}   # annualised; your view of vol to expiry
+  realized_weight: 0.5                    # 0 = prior only, 1 = realised only
+  halflife_s: 900
+  warmup_s: 300
+
+paper:
+  latency_ms: 150
+
+markets:
+  # Correlated drift: "Will the price of Bitcoin be above $74,000 on November 10?"
+  - name: btc-above-74k
+    slug: bitcoin-above-74k-on-november-10-2026
+    strategy: crypto_drift
+    symbol: BTCUSDT
+    kind: above          # above | below | touch
+    strike: 74000
+    # expiry: 2026-11-10T17:00:00Z   # defaults to the market's end date
+
+  # One-touch barrier: "Will Bitcoin reach $100,000 in November?"
+  - name: btc-reach-100k-nov
+    slug: will-bitcoin-reach-100k-in-november-2026
+    strategy: crypto_drift
+    symbol: BTCUSDT
+    kind: touch
+    strike: 100000
+
+  # Base-rate distortion: you supply P(YES); the engine buys whichever side
+  # the crowd has mispriced against it. 0.0005 here is a placeholder, not advice.
+  - name: btc-1m-2026
+    slug: will-bitcoin-reach-1000000-by-december-31-2026-946
+    strategy: base_rate
+    base_rate: 0.0005
+    min_edge: 0.001
