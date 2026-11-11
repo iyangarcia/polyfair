@@ -1,0 +1,30 @@
+12:28:40 INFO    discovered 11 open bitcoin strikes
+12:28:40 INFO    market bitcoin-above-70k-on-november-11-2026: Will the price of Bitcoin be above $70,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-72k-on-november-11-2026: Will the price of Bitcoin be above $72,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-74k-on-november-11-2026: Will the price of Bitcoin be above $74,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-76k-on-november-11-2026: Will the price of Bitcoin be above $76,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-78k-on-november-11-2026: Will the price of Bitcoin be above $78,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-80k-on-november-11-2026: Will the price of Bitcoin be above $80,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-82k-on-november-11-2026: Will the price of Bitcoin be above $82,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-84k-on-november-11-2026: Will the price of Bitcoin be above $84,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-86k-on-november-11-2026: Will the price of Bitcoin be above $86,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-88k-on-november-11-2026: Will the price of Bitcoin be above $88,000 on November 11? | fee rate 0.070 | min size 5
+12:28:40 INFO    market bitcoin-above-90k-on-november-11-2026: Will the price of Bitcoin be above $90,000 on November 11? | fee rate 0.070 | min size 5
+12:28:50 INFO    seasonal vol for BTCUSDT warmed with 45389 candles
+12:28:51 INFO    polymarket ws connected, 22 tokens
+12:28:51 INFO    binance ws connected
+12:30:00 INFO    FILL bitcoin-above-74k-on-november-11-2026 BUY NO 20.00 @ 0.4900 (fair 0.5277, edge 0.0203, fee 0.350, decided in 0.2 ms)
+12:33:51 INFO    [paper] equity 1000.23 | cash 989.85 | exposure 10.15 | realized +0.00 | fees 0.35
+12:33:51 INFO      bitcoin-above-70k-on-november-11-2026 fair 0.9990 | YES bid 0.996 ask 0.998 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-72k-on-november-11-2026 fair 0.9757 | YES bid 0.965 ask 0.966 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-74k-on-november-11-2026 fair 0.4530 | YES bid 0.473 ask 0.481 | held YES 0.00 NO 20.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-76k-on-november-11-2026 fair 0.0157 | YES bid 0.03 ask 0.035 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-78k-on-november-11-2026 fair 0.0010 | YES bid 0.002 ask 0.004 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-80k-on-november-11-2026 fair 0.0010 | YES bid 0.001 ask 0.002 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-82k-on-november-11-2026 fair 0.0010 | YES bid None ask 0.001 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-84k-on-november-11-2026 fair 0.0010 | YES bid None ask 0.001 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-86k-on-november-11-2026 fair 0.0010 | YES bid None ask 0.001 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-88k-on-november-11-2026 fair 0.0010 | YES bid None ask 0.001 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+12:33:51 INFO      bitcoin-above-90k-on-november-11-2026 fair 0.0010 | YES bid None ask 0.001 | held YES 0.00 NO 0.00 | BTCUSDT 73892.01 vol to expiry 0.58
+paper day 2026-11-11: expiry is 4.52 h away, outside (5, 6] h; running for 5 min
+summary: {'day': '2026-11-11', 'fills_today': 1, 'buys_today': 1, 'cash': 989.85, 'open_cost': 10.15, 'realized_total': 0.0, 'fees_total': 0.35}
