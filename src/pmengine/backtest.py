@@ -25,6 +25,7 @@ from pathlib import Path
 
 import httpx
 
+from .backfill import event_slug
 from .config import MarketConfig, Settings
 from .feeds.binance import Oracle
 from .gamma import parse_meta
@@ -95,7 +96,7 @@ async def load_markets(settings: Settings, asset: str, days: int, window_days: f
     async with httpx.AsyncClient(timeout=30) as client:
 
         async def event(d: date) -> list[dict]:
-            slug = f"{asset}-above-on-{d.strftime('%B').lower()}-{d.day}-{d.year}"
+            slug = event_slug(asset, d)
 
             async def fetch():
                 async with sem:

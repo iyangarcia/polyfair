@@ -77,6 +77,40 @@ Read the result with these in mind:
   forecasting edge and any profit is luck or a volatility bet.
 - `base_rate` markets are not backtested: their fair value is your own input.
 
+## Collecting data
+
+Two kinds of history, collected two ways:
+
+**Trades (`pmengine backfill`).** Polymarket keeps every trade of a resolved
+market, so this needs nothing running in the background. It downloads the full
+trade history of each resolved daily strike market into `data/trades/`, one
+`<slug>.json.gz` per market with its metadata (strike, expiry, outcome) and its
+trades oldest first. Re-run it whenever you like; it skips markets it already has.
+
+```bash
+.venv/Scripts/pmengine backfill --days 120    # ~2 min, ~1,250 markets
+```
+
+The trade `side` is stored as the Data API returns it. Whether it is the
+aggressor's side has not been verified yet.
+
+**Order books (`pmengine record` + GitHub Actions).** Polymarket only serves the
+current book, so book history exists only if it is saved as it happens.
+`pmengine record` takes one snapshot of every open strike's book (50 levels a
+side, best first) and exits, writing `data/books/YYYY-MM-DD/HHMMSS.json.gz`.
+`.github/workflows/record-books.yml` runs it every 30 minutes and commits each
+file to the `data` branch, so no machine of yours has to stay on. To read the
+history locally:
+
+```bash
+git fetch origin data && git worktree add ../polyfair-data data
+```
+
+Snapshots are about 13 KB, about 20 MB a month. A private repo on the Free plan gets
+2,000 Actions minutes a month and this uses about 1,440; on a public repo minutes
+are free and the schedule can be tightened to `*/15`. GitHub can run scheduled
+jobs late, and it pauses them after 60 days without repo activity.
+
 ## Live trading
 
 Live mode uses the official unified SDK (`polymarket-client`). The older
@@ -117,6 +151,8 @@ src/pmengine/
   orderbook.py    L2 book, sweep simulation
   feeds/          Polymarket and Binance WebSocket clients
   gamma.py        market metadata and discovery
+  backfill.py     trade history of resolved markets
+  recorder.py     one-shot order book snapshots
   strategies.py   fair-value models
   signals.py      fair value + book -> orders
   risk.py         limits and kill switch

@@ -9,12 +9,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .backfill import backfill
 from .backtest import SYMBOLS, run_backtest
 from .config import Settings, load_settings
 from .engine import Engine
 from .execution import LiveExecutor, PaperExecutor
 from .gamma import parse_meta, scan
 from .portfolio import Portfolio
+from .recorder import snapshot
 from .store import Store
 
 
@@ -47,6 +49,19 @@ def _backtest(args: argparse.Namespace) -> None:
     spreads = [args.half_spread] if args.half_spread is not None else [0.005, 0.01, 0.02]
     asyncio.run(run_backtest(settings, args.asset, args.days, args.window_days, spreads,
                              args.depth_usd, Path(args.out), args.skip_open_hours))
+
+
+def _backfill(args: argparse.Namespace) -> None:
+    r = asyncio.run(backfill(args.asset, args.days, Path(args.out)))
+    print(f"fetched {r.fetched} markets ({r.trades} trades) | already had {r.skipped} | "
+          f"not resolved yet {r.unresolved} | in {args.out}")
+
+
+def _record(args: argparse.Namespace) -> None:
+    path = asyncio.run(snapshot(args.asset, Path(args.out), args.days_ahead, args.max_levels))
+    if path is None:
+        raise SystemExit("no open markets to snapshot")
+    print(path)
 
 
 def _report(args: argparse.Namespace) -> None:
@@ -99,6 +114,19 @@ def main() -> None:
                    help="ignore each market for this long after listing (placeholder prices)")
     b.add_argument("--out", default="data/backtest_trades.csv")
     b.set_defaults(fn=_backtest)
+
+    f = sub.add_parser("backfill", help="download the trade history of resolved daily strike markets")
+    f.add_argument("--asset", choices=sorted(SYMBOLS), default="bitcoin")
+    f.add_argument("--days", type=int, default=30, help="number of daily expiries, counting back from today")
+    f.add_argument("--out", default="data/trades")
+    f.set_defaults(fn=_backfill)
+
+    c = sub.add_parser("record", help="save one order book snapshot of the open daily strike markets")
+    c.add_argument("--asset", choices=sorted(SYMBOLS), default="bitcoin")
+    c.add_argument("--days-ahead", type=int, default=1, help="also snapshot this many upcoming daily events")
+    c.add_argument("--max-levels", type=int, default=50, help="price levels kept per side, best first")
+    c.add_argument("--out", default="data/books")
+    c.set_defaults(fn=_record)
 
     args = p.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
