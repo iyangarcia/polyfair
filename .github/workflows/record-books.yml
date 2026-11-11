@@ -1,9 +1,9 @@
 # Saves one order book snapshot of the open daily BTC strike markets every
-# 30 minutes and commits it to the `data` branch (created on first run).
+# 15 minutes and commits it to the `data` branch (created on first run).
 #
-# Minutes: each run bills at least 1 minute. Every 30 min is ~1,440 min/month,
-# inside the 2,000 free minutes of a private repo on the Free plan. On a public
-# repo minutes are free, so "*/15" or "*/10" works there.
+# Minutes: each run bills at least 1 minute, ~2,900 min/month at this rate.
+# That is free on a public repo; on a private one (2,000 free minutes on the
+# Free plan) use "7,37 * * * *" instead.
 # GitHub may start scheduled runs late or skip them when it is busy, and it
 # pauses schedules on repos with no activity for 60 days.
 
@@ -11,7 +11,7 @@ name: record-books
 
 on:
   schedule:
-    - cron: "7,37 * * * *"   # off the hour, when GitHub's scheduler is less busy
+    - cron: "7,22,37,52 * * * *"   # off the hour, when GitHub's scheduler is less busy
   workflow_dispatch: {}       # "Run workflow" button for a manual snapshot
 
 permissions:
@@ -44,24 +44,5 @@ jobs:
 
       - name: Commit to the data branch
         env:
-          REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-        run: |
-          if git clone --quiet --depth 1 --branch data "$REPO_URL" store; then
-            cd store
-          else
-            mkdir store && cd store
-            git init --quiet
-            git checkout --quiet --orphan data
-            git remote add origin "$REPO_URL"
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p books
-          cp -r "$RUNNER_TEMP/books/." books/
-          git add books
-          git commit --quiet -m "books snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          for i in 1 2 3; do
-            git push --quiet origin data && exit 0
-            git pull --quiet --rebase origin data || true
-          done
-          exit 1
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash code/.github/scripts/push-data.sh "$RUNNER_TEMP/books" books "books snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"

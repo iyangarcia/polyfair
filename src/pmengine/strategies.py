@@ -56,8 +56,10 @@ class CryptoDriftStrategy:
         remaining = self.expiry_ts - now
         if remaining < self.ocfg.min_time_to_expiry_s:
             return None  # settlement uses a specific candle; do not guess it
+        if self.ocfg.max_time_to_expiry_s is not None and remaining > self.ocfg.max_time_to_expiry_s:
+            return None
         tau = remaining / SECONDS_PER_YEAR
-        sigma = self.oracle.vol(self.symbol)
+        sigma = self.oracle.vol_to(self.symbol, now, self.expiry_ts)
         if self.kind == "above":
             p = prob_above(spot, self.strike, sigma, tau)
         elif self.kind == "below":

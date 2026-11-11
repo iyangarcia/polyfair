@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from collections import deque
+from datetime import datetime, timezone
 
 SECONDS_PER_YEAR = 365.0 * 24 * 3600
 
@@ -116,3 +118,82 @@ class EwmaVol:
         w = self.realized_weight * ramp
         var = w * self._var_rate * SECONDS_PER_YEAR + (1.0 - w) * self.prior_vol**2
         return math.sqrt(var)
+
+
+def vol_bucket(ts: float) -> int:
+    """0-23: weekday UTC hour; 24-47: weekend UTC hour."""
+    d = datetime.fromtimestamp(ts, timezone.utc)
+    return (24 if d.weekday() >= 5 else 0) + d.hour
+
+
+class SeasonalVol:
+    """Volatility that depends on the time of day and the day of the week.
+
+    BTC is roughly twice as volatile on weekdays between 12:00 and 16:00 UTC
+    (US data releases, US equity open) as overnight, and much calmer at
+    weekends. A flat vol misprices any contract whose remaining life covers
+    those hours unevenly. This keeps the mean squared 1-minute log return of
+    each (weekday/weekend, UTC hour) bucket over a trailing window, and
+    integrates it over the exact span to expiry.
+
+    Feed it prices in time order; it only ever uses minutes that have closed.
+    """
+
+    def __init__(self, window_days: float = 30.0, min_days: float = 7.0, min_per_bucket: int = 120) -> None:
+        self.window_s = window_days * 86400.0
+        self.min_s = min_days * 86400.0
+        self.min_per_bucket = min_per_bucket
+        self._q: deque[tuple[float, int, float]] = deque()  # (minute start ts, bucket, r^2)
+        self._sum = [0.0] * 48
+        self._n = [0] * 48
+        self._cur_min: int | None = None
+        self._cur_px = 0.0
+        self._closed: tuple[int, float] | None = None  # (minute, close price)
+        self._first_ts: float | None = None
+
+    def update(self, price: float, ts: float) -> None:
+        m = int(ts // 60)
+        if self._cur_min is None:
+            self._cur_min, self._cur_px, self._first_ts = m, price, ts
+            return
+        if m <= self._cur_min:
+            self._cur_px = price
+            return
+        # minute self._cur_min has closed
+        if self._closed is not None and self._cur_min - self._closed[0] == 1:
+            r2 = math.log(self._cur_px / self._closed[1]) ** 2
+            start = self._cur_min * 60.0
+            b = vol_bucket(start)
+            self._q.append((start, b, r2))
+            self._sum[b] += r2
+            self._n[b] += 1
+            while self._q and start - self._q[0][0] > self.window_s:
+                _, ob, or2 = self._q.popleft()
+                self._sum[ob] -= or2
+                self._n[ob] -= 1
+        self._closed = (self._cur_min, self._cur_px)
+        self._cur_min, self._cur_px = m, price
+
+    @property
+    def ready(self) -> bool:
+        return (self._first_ts is not None and self._closed is not None
+                and self._closed[0] * 60.0 - self._first_ts >= self.min_s)
+
+    def var_per_s(self, bucket: int) -> float | None:
+        if self._n[bucket] < self.min_per_bucket:
+            return None
+        return max(self._sum[bucket], 0.0) / self._n[bucket] / 60.0
+
+    def sigma(self, t0: float, t1: float) -> float | None:
+        """Annualised vol implied by the seasonal profile over [t0, t1], or None if not known yet."""
+        if not self.ready or t1 <= t0:
+            return None
+        total, t = 0.0, t0
+        while t < t1:
+            nxt = min(t1, (math.floor(t / 3600.0) + 1) * 3600.0)
+            v = self.var_per_s(vol_bucket(t))
+            if v is None:
+                return None
+            total += v * (nxt - t)
+            t = nxt
+        return math.sqrt(total / ((t1 - t0) / SECONDS_PER_YEAR))

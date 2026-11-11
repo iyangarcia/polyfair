@@ -10,7 +10,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from .backfill import backfill
-from .backtest import SYMBOLS, run_backtest
+from .backtest import SYMBOLS, BtConfig, run_backtest
 from .config import Settings, load_settings
 from .engine import Engine
 from .execution import LiveExecutor, PaperExecutor
@@ -46,9 +46,13 @@ def _scan(args: argparse.Namespace) -> None:
 
 def _backtest(args: argparse.Namespace) -> None:
     settings = load_settings(args.config) if Path(args.config).exists() else Settings()
-    spreads = [args.half_spread] if args.half_spread is not None else [0.005, 0.01, 0.02]
-    asyncio.run(run_backtest(settings, args.asset, args.days, args.window_days, spreads,
-                             args.depth_usd, Path(args.out), args.skip_open_hours))
+    if args.vol_model:
+        settings = settings.model_copy(update={"vol": settings.vol.model_copy(update={"model": args.vol_model})})
+    cfg = BtConfig(strategy=args.strategy, step_s=args.step_s, lookback_s=args.lookback_s,
+                   latency_s=args.latency_s, fill_window_s=args.fill_window_s, participation=args.participation,
+                   window_days=args.window_days, warmup_days=args.warmup_days, skip_open_h=args.skip_open_hours,
+                   shrink_days=args.shrink_days, symmetric=not args.no_symmetric, min_edge=args.min_edge)
+    run_backtest(settings, cfg, Path(args.trades_dir), args.asset, args.days, Path(args.out))
 
 
 def _backfill(args: argparse.Namespace) -> None:
@@ -62,6 +66,12 @@ def _record(args: argparse.Namespace) -> None:
     if path is None:
         raise SystemExit("no open markets to snapshot")
     print(path)
+
+
+def _paper_day(args: argparse.Namespace) -> None:
+    from .paper import run_day
+
+    run_day(load_settings(args.config), Path(args.state_dir), args.force, max_minutes=args.max_minutes)
 
 
 def _report(args: argparse.Namespace) -> None:
@@ -103,14 +113,27 @@ def main() -> None:
     t.add_argument("--live", action="store_true")
     t.set_defaults(fn=_report)
 
-    b = sub.add_parser("backtest", help="replay resolved daily strike markets; sends no orders")
+    d = BtConfig()
+    b = sub.add_parser("backtest", help="walk-forward backtest on backfilled real trades; sends no orders")
     b.add_argument("--config", default="config.yaml", help="strategy/risk/vol settings (defaults if missing)")
+    b.add_argument("--trades-dir", default="data/trades", help="output of `pmengine backfill`")
     b.add_argument("--asset", choices=sorted(SYMBOLS), default="bitcoin")
-    b.add_argument("--days", type=int, default=14, help="number of daily expiries, counting back from today")
-    b.add_argument("--window-days", type=float, default=7, help="how long before each expiry to trade")
-    b.add_argument("--half-spread", type=float, help="assumed half spread (default: run 0.005, 0.01, 0.02)")
-    b.add_argument("--depth-usd", type=float, default=200, help="assumed size resting on each side")
-    b.add_argument("--skip-open-hours", type=float, default=12,
+    b.add_argument("--strategy", choices=["calibrated", "crypto_drift"], default=d.strategy)
+    b.add_argument("--vol-model", choices=["ewma", "seasonal"], help="override vol.model for crypto_drift")
+    b.add_argument("--days", type=int, help="use only the most recent N expiry days (default: all)")
+    b.add_argument("--warmup-days", type=int, default=d.warmup_days,
+                   help="first expiry days only train the calibration; nothing is traded")
+    b.add_argument("--window-days", type=float, default=d.window_days, help="trade a market only this close to expiry")
+    b.add_argument("--step-s", type=float, default=d.step_s, help="decision interval per market")
+    b.add_argument("--lookback-s", type=float, default=d.lookback_s, help="max age of a trade used as a quote")
+    b.add_argument("--latency-s", type=float, default=d.latency_s)
+    b.add_argument("--fill-window-s", type=float, default=d.fill_window_s)
+    b.add_argument("--participation", type=float, default=d.participation,
+                   help="share of later takers' size the order could have taken")
+    b.add_argument("--shrink-days", type=float, default=d.shrink_days)
+    b.add_argument("--no-symmetric", action="store_true", help="do not pool YES and NO in the calibration")
+    b.add_argument("--min-edge", type=float, help="override strategy.min_edge")
+    b.add_argument("--skip-open-hours", type=float, default=d.skip_open_h,
                    help="ignore each market for this long after listing (placeholder prices)")
     b.add_argument("--out", default="data/backtest_trades.csv")
     b.set_defaults(fn=_backtest)
@@ -120,6 +143,13 @@ def main() -> None:
     f.add_argument("--days", type=int, default=30, help="number of daily expiries, counting back from today")
     f.add_argument("--out", default="data/trades")
     f.set_defaults(fn=_backfill)
+
+    pd = sub.add_parser("paper-day", help="one unattended day of paper trading the discovered ladder")
+    pd.add_argument("--config", default="paper.yaml")
+    pd.add_argument("--state-dir", default="data/paper", help="fill log, run markers and summary.csv")
+    pd.add_argument("--force", action="store_true", help="run now even outside the window or if already run")
+    pd.add_argument("--max-minutes", type=float, help="stop after this long at most")
+    pd.set_defaults(fn=_paper_day)
 
     c = sub.add_parser("record", help="save one order book snapshot of the open daily strike markets")
     c.add_argument("--asset", choices=sorted(SYMBOLS), default="bitcoin")

@@ -33,17 +33,29 @@ class StrategyConfig(_Model):
 
 
 class VolConfig(_Model):
+    # ewma: one number from a prior blended with recent realised vol.
+    # seasonal: vol by UTC hour and weekday/weekend from trailing 1-minute returns,
+    #   integrated over the exact time to expiry; falls back to ewma until it has
+    #   seasonal_min_days of history.
+    model: Literal["ewma", "seasonal"] = "ewma"
     prior: dict[str, float] = {"BTCUSDT": 0.50, "ETHUSDT": 0.65}  # annualised
     default_prior: float = 0.60
     halflife_s: float = 900.0
     warmup_s: float = 300.0
     realized_weight: float = Field(0.5, ge=0, le=1)
+    seasonal_days: float = 30.0
+    seasonal_min_days: float = 7.0
 
 
 class OracleConfig(_Model):
+    # Binance blocks US addresses (GitHub's runners among them) on these; the
+    # market-data mirrors wss://data-stream.binance.vision and
+    # https://data-api.binance.vision serve the same data to everyone.
     binance_ws: str = "wss://stream.binance.com:9443"
+    binance_rest: str = "https://api.binance.com"
     max_age_s: float = 2.0  # no trading on a price older than this
     min_time_to_expiry_s: float = 300.0  # stand down close to settlement
+    max_time_to_expiry_s: float | None = None  # only trade this close to expiry (None: always)
 
 
 class PaperConfig(_Model):
@@ -77,6 +89,15 @@ class MarketConfig(_Model):
         return self
 
 
+class DiscoverConfig(_Model):
+    """Trade every open strike of the daily "<asset> above $K" ladder, found at startup."""
+
+    asset: Literal["bitcoin", "ethereum"] = "bitcoin"
+    symbol: str = "BTCUSDT"
+    days_ahead: int = 0  # 0: only the ladder expiring today (UTC date)
+    min_edge: float | None = None
+
+
 class Settings(_Model):
     bankroll: float = 1000.0  # capital allocated to the engine, USDC
     db_path: str = "data/engine.db"
@@ -89,6 +110,7 @@ class Settings(_Model):
     oracle: OracleConfig = OracleConfig()
     paper: PaperConfig = PaperConfig()
     markets: list[MarketConfig] = []
+    discover: list[DiscoverConfig] = []
 
     @model_validator(mode="after")
     def _unique(self) -> "Settings":

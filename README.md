@@ -28,6 +28,15 @@ Polymarket market ws ──► OrderBook per token ───────┤
 | `crypto_drift` | `kind: above` / `below` | `P(S_T > K)` under driftless GBM off the live Binance mid |
 | `crypto_drift` | `kind: touch` | One-touch barrier probability (reflection principle) |
 | `base_rate` | `base_rate: p` | Your fixed estimate of P(YES); the engine buys whichever side the crowd misprices against it |
+| `calibrated` (backtest only) | `--strategy calibrated` | Market price plus the bias that resolved markets showed at that price and time to expiry |
+
+Volatility for `crypto_drift` comes from `vol.model`:
+
+- `ewma` (default): one number, a prior blended with recent realised vol.
+- `seasonal`: vol by UTC hour and weekday/weekend from the trailing 30 days of
+  1-minute returns, integrated over the exact time left to expiry. At startup
+  the engine downloads those 30 days of candles so it is ready at once. See the
+  research notes below for why this matters.
 
 Entry: lift every ask level where `fair - price - fee >= min_edge`.
 Size: `kelly_fraction * (fair - cost) / (1 - cost)` of equity, capped by resting depth and risk limits.
@@ -56,26 +65,108 @@ Stop trading without stopping the process: create the kill file (`data/KILL`).
 ## Backtest
 
 ```bash
-.venv/Scripts/pmengine backtest --days 30
+.venv/Scripts/pmengine backfill --days 120     # real trades, once
+.venv/Scripts/pmengine backtest --strategy crypto_drift --vol-model seasonal --window-days 0.25
+.venv/Scripts/pmengine backtest --strategy calibrated
 ```
 
-Replays resolved daily "Bitcoin above $X" markets (`--asset ethereum` also works)
-through the same signal, risk and portfolio code as the engine, and settles each
-position at the real outcome. It sends no orders and needs no keys. Data is
-Polymarket's 1-minute price history and Binance 1-minute candles, cached under
-`data/cache/`. Trades go to `data/backtest_trades.csv`.
+A walk-forward backtest on the real taker trades from `pmengine backfill`, run
+through the same signal, risk and portfolio code as the engine. It sends no
+orders and needs no keys. Every `--step-s` (300 s) of each market's last
+`--window-days`:
 
-Read the result with these in mind:
+1. **Quotes come from trades before the decision.** A token's ask is what the
+   latest taker paid for it, its bid what the latest taker seller got (or 1 -
+   the other token's ask). No trade within `--lookback-s`: no quote, no trade.
+2. **Fills come from trades after it.** An order fills only against real taker
+   trades on the same side, after `--latency-s`, within `--fill-window-s`, at
+   or better than its limit, and only `--participation` (50%) of their size.
+   Each Data API row is one taker order, so its `side` is the aggressor's.
+3. Positions settle at the real outcome. The first `--warmup-days` (30) expiry
+   days are never traded; they only train `calibrated` and warm the vol model.
 
-- Polymarket publishes past prices, not past order books. The quote is rebuilt as
-  `price +/- half_spread`, and the report runs three spreads so you can see how
-  much the answer depends on that guess.
-- One-minute data cannot show the sub-second latency edge. What is tested is
-  whether the model's disagreement with the market pays.
-- The Brier score line compares the model's probabilities with the market's
-  against what actually happened. If the market's is lower, the model has no
+The report gives PnL, fill rate, a 95% interval for mean daily PnL from
+resampling whole days, a Sharpe ratio, both halves of the test period, and the
+Brier score of the model against the market. Read it with these in mind:
+
+- The ~11 strikes of a day settle on the same BTC print. They are one bet, so
+  the statistics count days, not markets. A few months is few observations.
+- If the market's Brier score is lower than the model's, the model has no
   forecasting edge and any profit is luck or a volatility bet.
+- A trade print proves liquidity existed, not that you would have won it, and
+  1-minute candles cannot test sub-second latency. Paper and live will differ.
 - `base_rate` markets are not backtested: their fair value is your own input.
+
+## Research notes (Jul 15 - Nov 10 2026, 115 expiry days, 631k trades)
+
+What was tested, in order. Analysis scripts were run outside the repo; the
+numbers come from the backtest and from these data.
+
+1. **Is the market calibrated?** Mostly yes. Across all taker buys, tokens won
+   about as often as their price implied, with no significant longshot bias.
+   This is why the original flat-vol model lost: it argued with a market that
+   was usually right.
+2. **Late-window bias.** 1-6 h before expiry, tokens bought at 10-50c won about
+   8c per share more than they cost after fees (95% CI +2c to +15c), on YES
+   and NO alike. But sampling prices on a fixed 5-minute grid, as a strategy
+   would, halves it (+4.9c, not significant): much of it was other takers'
+   timing. The `calibrated` strategy, which learns these biases walk-forward,
+   lost 45% over 85 test days. Its predicted edge did not repeat.
+3. **Flat-vol `crypto_drift` on real fills** made +404%, but without its best
+   3 days it lost money. It is a bet on BTC moving more than priced that paid
+   in a few volatile stretches.
+4. **Why late tails are cheap.** The vol implied by the strike ladder matches
+   realised vol a day before expiry (32.7% vs 33.7%) but not 6 h before (35.8%
+   vs 44.9%, implied below realised on 79% of days, CI -12 to -6 points). BTC on
+   weekdays is about twice as volatile 12:00-16:00 UTC (US data, US equity
+   open) as overnight, and these markets settle at noon New York time (16:00
+   UTC in summer, 17:00 UTC in winter), right after. The market prices those
+   hours as if vol were flat.
+5. **Test of that hypothesis**, fixed before running it: `crypto_drift`, seasonal
+   vol, last 6 h only, defaults otherwise. +128% over 85 test days, Sharpe 3.5,
+   max drawdown $414, model Brier 0.0367 vs market 0.0370 (the only model here
+   that beats the market). Every nearby variant was positive (3 h, 12 h, 3 d
+   windows, higher min edge, 25% participation with 5 s latency); flat vol with
+   the same window made +14%. **But** the daily-PnL interval still includes
+   zero (-2.6 to +33.2 a day), nearly all of the profit came in October, and
+   without its best 5 days it is flat.
+
+Status: a lead with a mechanism, not a proven edge. The fair test is days the
+backtest has not seen. Re-run `backfill` and the same backtest command each
+month without changing any setting, and paper-trade it meanwhile (below).
+
+## Daily paper trading (GitHub Actions)
+
+`.github/workflows/paper-trade.yml` paper-trades the backtested setup every
+day with no machine of yours on. It never trades live: it runs
+`pmengine paper-day`, which only uses the paper executor.
+
+- `paper.yaml` is the backtested setup, unchanged. It finds each day's strike
+  ladder by itself (`discover:`), trades only the last 6 hours, and reads Binance
+  through its market-data mirrors, which GitHub's US runners can reach.
+- The job starts at 10:05 and 11:05 UTC. Only the start 5-6 hours before that
+  day's expiry trades (10:05 in summer, 11:05 in winter); the other exits in
+  seconds. A run lasts up to about 5h55, inside GitHub's 6-hour job limit.
+- State lives in `paper/` on the `data` branch: the fill log `engine.db`,
+  `summary.csv` (one row per day), `logs/` and `runs/` markers that stop a day
+  running twice. Positions are held to resolution and settle at the start of
+  the next day's run.
+- About 6 job-hours a day: free on a public repo, far over the Free plan's
+  allowance on a private one.
+
+To read the results, check the `data` branch out next to the repo (once) and
+open `paper/summary.csv`, or the run's summary on the Actions tab:
+
+```bash
+git worktree add ../polyfair-data data    # later: git -C ../polyfair-data pull
+```
+
+The **Run workflow** button, with `force` and `max_minutes`, starts a short
+test run at any time.
+
+Paper fills are optimistic (no queue position, no other takers racing for the
+quote), and the live engine evaluates on every tick rather than every 5
+minutes as the backtest does, so expect paper and backtest to differ somewhat.
 
 ## Collecting data
 
@@ -91,14 +182,14 @@ trades oldest first. Re-run it whenever you like; it skips markets it already ha
 .venv/Scripts/pmengine backfill --days 120    # ~2 min, ~1,250 markets
 ```
 
-The trade `side` is stored as the Data API returns it. Whether it is the
-aggressor's side has not been verified yet.
+Each Data API row is one taker order (every transaction has exactly one row),
+so the stored `side` is the aggressor's side.
 
 **Order books (`pmengine record` + GitHub Actions).** Polymarket only serves the
 current book, so book history exists only if it is saved as it happens.
 `pmengine record` takes one snapshot of every open strike's book (50 levels a
 side, best first) and exits, writing `data/books/YYYY-MM-DD/HHMMSS.json.gz`.
-`.github/workflows/record-books.yml` runs it every 30 minutes and commits each
+`.github/workflows/record-books.yml` runs it every 15 minutes and commits each
 file to the `data` branch, so no machine of yours has to stay on. To read the
 history locally:
 
@@ -106,10 +197,12 @@ history locally:
 git fetch origin data && git worktree add ../polyfair-data data
 ```
 
-Snapshots are about 13 KB, about 20 MB a month. A private repo on the Free plan gets
-2,000 Actions minutes a month and this uses about 1,440; on a public repo minutes
-are free and the schedule can be tightened to `*/15`. GitHub can run scheduled
-jobs late, and it pauses them after 60 days without repo activity.
+Snapshots are about 13 KB, about 40 MB a month. This uses about 2,900 Actions
+minutes a month: free on a public repo, more than a private repo on the Free
+plan gets (2,000; use `7,37 * * * *` there). Both workflows push through
+`.github/scripts/push-data.sh`, which retries from a fresh clone when the other
+pushed first. GitHub can run scheduled jobs late, and it pauses them after 60
+days without repo activity.
 
 ## Live trading
 
@@ -139,7 +232,8 @@ the exchange. Do not trade the same markets by hand from the same wallet.
   before it started. Settlement uses a specific Binance candle, so the engine
   stands down `min_time_to_expiry_s` before expiry.
 - One evaluation runs at a time, so a slow order delays the other markets.
-- A position only settles in the books while its market is still in `config.yaml`.
+- A position settles in the books when its market is configured, or, for
+  discovered markets (named by their slug), at the next startup after it resolves.
 - Only binary markets. Outcome 0 is treated as YES ("Up" on up/down markets).
 - Check that Polymarket is available to you where you live before going live.
 
@@ -153,6 +247,10 @@ src/pmengine/
   gamma.py        market metadata and discovery
   backfill.py     trade history of resolved markets
   recorder.py     one-shot order book snapshots
+  paper.py        one unattended paper-trading day
+  tape.py         trade tape: quotes before t, fills after t
+  calibration.py  empirical price calibration from resolved markets
+  backtest.py     walk-forward backtest on the tape
   strategies.py   fair-value models
   signals.py      fair value + book -> orders
   risk.py         limits and kill switch

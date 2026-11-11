@@ -11,7 +11,7 @@ from collections.abc import Callable
 import websockets
 
 from ..config import VolConfig
-from ..pricing import EwmaVol
+from ..pricing import EwmaVol, SeasonalVol
 
 log = logging.getLogger(__name__)
 
@@ -23,9 +23,15 @@ class Oracle:
         self._cfg = vol_cfg or VolConfig()
         self._price: dict[str, tuple[float, float]] = {}  # symbol -> (mid, local ts)
         self._vol: dict[str, EwmaVol] = {}
+        self._seasonal: dict[str, SeasonalVol] = {}
 
     def update(self, symbol: str, mid: float, ts: float) -> None:
         self._price[symbol] = (mid, ts)
+        if self._cfg.model == "seasonal":
+            sv = self._seasonal.get(symbol)
+            if sv is None:
+                sv = self._seasonal[symbol] = SeasonalVol(self._cfg.seasonal_days, self._cfg.seasonal_min_days)
+            sv.update(mid, ts)
         est = self._vol.get(symbol)
         if est is None:
             c = self._cfg
@@ -43,6 +49,12 @@ class Oracle:
     def vol(self, symbol: str) -> float:
         est = self._vol.get(symbol)
         return est.value if est else self._cfg.prior.get(symbol, self._cfg.default_prior)
+
+    def vol_to(self, symbol: str, t0: float, t1: float) -> float:
+        """Vol to use for a contract alive over [t0, t1]: seasonal when known, else the flat estimate."""
+        sv = self._seasonal.get(symbol)
+        s = sv.sigma(t0, t1) if sv is not None else None
+        return s if s is not None else self.vol(symbol)
 
 
 class BinanceFeed:

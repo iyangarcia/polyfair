@@ -26,9 +26,12 @@ oracle:
   binance_ws: wss://stream.binance.com:9443
   max_age_s: 2
   min_time_to_expiry_s: 300
+  max_time_to_expiry_s: 21600   # crypto_drift trades only the last 6h (the backtested setup); remove for always
 
 vol:
-  prior: {BTCUSDT: 0.50, ETHUSDT: 0.65}   # annualised; your view of vol to expiry
+  model: seasonal         # seasonal: vol by UTC hour, weekday/weekend (see README); ewma: one flat number
+  seasonal_days: 30       # trailing history; downloaded from Binance at startup
+  prior: {BTCUSDT: 0.50, ETHUSDT: 0.65}   # annualised; used by ewma, and until seasonal is ready
   realized_weight: 0.5                    # 0 = prior only, 1 = realised only
   halflife_s: 900
   warmup_s: 300

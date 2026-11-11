@@ -1,0 +1,43 @@
+# Paper-trading config run daily by .github/workflows/paper-trade.yml.
+# It is the backtested setup, unchanged, so the forward test is a fair one:
+#   pmengine backtest --strategy crypto_drift --vol-model seasonal --window-days 0.25
+# Change a setting here and the paper results stop testing that backtest.
+
+bankroll: 1000
+db_path: data/paper/engine.db
+status_interval_s: 300
+
+strategy:
+  min_edge: 0.02
+  max_edge: 0.25
+  exit_edge: 0.0
+  kelly_fraction: 0.25
+
+risk:
+  max_order_usd: 25
+  max_position_usd: 100
+  max_total_exposure_usd: 500
+  max_session_loss_usd: 100000   # off: the backtest has no daily stop; this is paper money
+  max_orders_per_min: 20
+  cooldown_s: 2
+  max_feed_silence_s: 30
+  kill_file: data/KILL
+
+oracle:
+  binance_ws: wss://data-stream.binance.vision      # Binance's market-data mirror: open to US runners
+  binance_rest: https://data-api.binance.vision
+  max_age_s: 2
+  min_time_to_expiry_s: 300
+  max_time_to_expiry_s: 21600                        # last 6 hours only
+
+vol:
+  model: seasonal
+  seasonal_days: 30
+
+paper:
+  latency_ms: 150
+
+discover:
+  - asset: bitcoin
+    symbol: BTCUSDT
+    days_ahead: 0
