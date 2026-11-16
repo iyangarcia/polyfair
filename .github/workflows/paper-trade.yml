@@ -2,6 +2,7 @@
 # ladder, last ~6 hours before the noon New York expiry. State (fill log,
 # run markers, summary.csv, logs) lives in paper/ on the `data` branch and is
 # restored at the start of each run, so results accumulate day by day.
+# Manual runs are tests: they use paper-test/ and never touch paper/.
 #
 # Expiry is 16:00 UTC in summer and 17:00 UTC in winter, so the job starts
 # twice; `pmengine paper-day` trades only from the start that is 5-6 hours
@@ -37,6 +38,10 @@ jobs:
   paper-day:
     runs-on: ubuntu-latest
     timeout-minutes: 358
+    env:
+      # Only scheduled runs build the real record in paper/. Any manual run
+      # ("Run workflow") is a test and keeps its own state in paper-test/.
+      STATE: ${{ github.event_name == 'schedule' && 'paper' || 'paper-test' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,13 +60,14 @@ jobs:
         env:
           REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
         run: |
+          echo "state folder on the data branch: $STATE/"
           mkdir -p code/data/paper
           if git clone --quiet --depth 1 --branch data "$REPO_URL" "$RUNNER_TEMP/restore" 2>/dev/null \
-             && [ -d "$RUNNER_TEMP/restore/paper" ]; then
-            cp -r "$RUNNER_TEMP/restore/paper/." code/data/paper/
+             && [ -d "$RUNNER_TEMP/restore/$STATE" ]; then
+            cp -r "$RUNNER_TEMP/restore/$STATE/." code/data/paper/
             echo "restored: $(ls code/data/paper | tr '\n' ' ')"
           else
-            echo "no saved paper state yet: starting fresh"
+            echo "no saved state in $STATE/ yet: starting fresh"
           fi
 
       - name: Paper-trade today's ladder
@@ -84,13 +90,13 @@ jobs:
         if: always() && steps.run.outputs.skipped != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash code/.github/scripts/push-data.sh code/data/paper paper "paper day $(date -u +%Y-%m-%d)"
+        run: bash code/.github/scripts/push-data.sh code/data/paper "$STATE" "$STATE day $(date -u +%Y-%m-%d)"
 
       - name: Summary
         if: always() && steps.run.outputs.skipped != 'true'
         run: |
           {
-            echo "### Paper trading"
+            echo "### Paper trading ($STATE/)"
             echo '```'
             cat code/data/paper/summary.csv 2>/dev/null | tail -15 || echo "no summary yet"
             echo '```'
