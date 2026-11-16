@@ -1,10 +1,12 @@
 """One unattended day of paper trading, for a scheduler such as GitHub Actions.
 
 The tested setup trades only the last hours before each daily expiry, which
-is noon New York time (16:00 UTC in summer, 17:00 UTC in winter). A runner
-can start this twice a day, an hour apart; only the start that falls between
-`min_lead_h` and `max_lead_h` before today's expiry trades, the other exits
-at once. A marker file stops a second run for the same expiry day.
+is noon New York time (16:00 UTC in summer, 17:00 UTC in winter). GitHub's
+scheduler starts jobs hours late, so the runner starts this every hour and
+the first start that lands between `min_lead_h` and `max_lead_h` before
+today's expiry trades until expiry; every other start exits at once. A late
+start trades a shorter day, and summary.csv records the minutes traded. A
+marker file stops a second run for the same expiry day.
 
 State lives in `state_dir`: the SQLite fill log (settings.db_path should point
 inside it), runs/<day>.done markers, and summary.csv with one row per day.
@@ -32,7 +34,7 @@ from .store import Store
 log = logging.getLogger(__name__)
 
 STOP_BEFORE_S = 240.0  # the strategy stands down 300 s before expiry anyway
-SUMMARY_COLS = ["day", "fills_today", "buys_today", "cash", "open_cost", "realized_total", "fees_total"]
+SUMMARY_COLS = ["day", "minutes", "fills_today", "buys_today", "cash", "open_cost", "realized_total", "fees_total"]
 
 
 async def todays_expiry(s: Settings, now: datetime) -> float | None:
@@ -54,15 +56,31 @@ def should_run(expiry: float | None, now: float, min_lead_h: float, max_lead_h: 
     return True, f"expiry in {lead_h:.2f} h"
 
 
-def append_summary(path: Path, day: str, s: Settings, store: Store, since: float) -> dict:
+def _upgrade_header(path: Path) -> None:
+    """Rewrite a summary.csv written with older columns; missing values stay blank."""
+    with open(path, newline="") as f:
+        rows = list(csv.DictReader(f))
+        f.seek(0)
+        header = f.readline().strip().split(",")
+    if header == SUMMARY_COLS:
+        return
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=SUMMARY_COLS, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+
+def append_summary(path: Path, day: str, s: Settings, store: Store, since: float, minutes: float) -> dict:
     fills = store.fills("paper")
     pf = Portfolio(s.bankroll)
     pf.replay(fills)
     today = [f for f in fills if f.ts >= since]
-    row = {"day": day, "fills_today": len(today), "buys_today": sum(1 for f in today if f.side == "BUY"),
+    row = {"day": day, "minutes": round(minutes), "fills_today": len(today), "buys_today": sum(1 for f in today if f.side == "BUY"),
            "cash": round(pf.cash, 2), "open_cost": round(pf.exposure(), 2),
            "realized_total": round(pf.realized, 2), "fees_total": round(pf.fees, 2)}
     new = not path.exists()
+    if not new:
+        _upgrade_header(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", newline="") as f:
         w = csv.DictWriter(f, fieldnames=SUMMARY_COLS)
@@ -72,7 +90,7 @@ def append_summary(path: Path, day: str, s: Settings, store: Store, since: float
     return row
 
 
-def run_day(s: Settings, state_dir: Path, force: bool = False, min_lead_h: float = 5.0,
+def run_day(s: Settings, state_dir: Path, force: bool = False, min_lead_h: float = 1.0,
             max_lead_h: float = 6.0, max_minutes: float | None = None) -> int:
     if not s.discover:
         raise SystemExit("paper-day needs a `discover` section in the config")
@@ -101,7 +119,7 @@ def run_day(s: Settings, state_dir: Path, force: bool = False, min_lead_h: float
         asyncio.run(Engine(s, PaperExecutor(s.paper.latency_ms), store).run(duration))
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(datetime.now(timezone.utc).isoformat())
-        row = append_summary(state_dir / "summary.csv", day, s, store, started)
+        row = append_summary(state_dir / "summary.csv", day, s, store, started, (time.time() - started) / 60.0)
         print("summary:", row)
     finally:
         store.close()

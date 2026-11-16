@@ -71,7 +71,8 @@ def _record(args: argparse.Namespace) -> None:
 def _paper_day(args: argparse.Namespace) -> None:
     from .paper import run_day
 
-    run_day(load_settings(args.config), Path(args.state_dir), args.force, max_minutes=args.max_minutes)
+    run_day(load_settings(args.config), Path(args.state_dir), args.force, min_lead_h=args.min_lead_h,
+            max_lead_h=args.max_lead_h, max_minutes=args.max_minutes)
 
 
 def _report(args: argparse.Namespace) -> None:
@@ -149,6 +150,8 @@ def main() -> None:
     pd.add_argument("--state-dir", default="data/paper", help="fill log, run markers and summary.csv")
     pd.add_argument("--force", action="store_true", help="run now even outside the window or if already run")
     pd.add_argument("--max-minutes", type=float, help="stop after this long at most")
+    pd.add_argument("--min-lead-h", type=float, default=1.0, help="skip if expiry is this close or closer")
+    pd.add_argument("--max-lead-h", type=float, default=6.0, help="skip if expiry is further away than this")
     pd.set_defaults(fn=_paper_day)
 
     c = sub.add_parser("record", help="save one order book snapshot of the open daily strike markets")
